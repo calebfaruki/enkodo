@@ -1,0 +1,77 @@
+#!/usr/bin/env python
+"""
+Usage:
+    enkodo analyze <filename>
+"""
+
+import subprocess
+import json
+from dataclasses import dataclass
+from docopt import docopt
+
+@dataclass
+class VideoAnalysis:
+    container: str
+    codec: str
+    resolution: str
+    duration: str
+    bitrate: int # kbps
+    framerate: int
+
+def main():
+    arguments = docopt(__doc__)
+
+    if arguments['analyze']:
+        analysis = analyze(arguments['<filename>'])
+        print(analysis)
+
+def analyze(filename: str) -> VideoAnalysis:
+    print("Analyzing...")
+
+    command = [
+        "ffprobe",
+        "-print_format", "json",
+        "-show_format",
+        "-show_streams",
+        "-v", "quiet",
+        filename
+    ]
+
+    result = subprocess.run(command, capture_output=True, text=True)
+    
+    parsed_result = json.loads(result.stdout)
+
+    # Get container
+    container = parsed_result["format"]["format_long_name"]
+
+    streams = parsed_result["streams"]
+
+    # Find default video stream.
+    vstream = [stream for stream in streams if stream["codec_type"] == "video" and stream["disposition"]["default"] == 1][0]
+
+    # Get resolution
+    height = vstream["height"]
+    width = vstream["width"]
+    resolution = f"{height}x{width}"
+
+    # Get duration
+    total_seconds = int(float(vstream["duration"]))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+    # Get bitrate in kbps
+    bitrate = int(vstream["bit_rate"])
+
+    analysis = VideoAnalysis(
+        container=container,
+        codec=vstream["codec_name"],
+        resolution=resolution,
+        duration=duration,
+        bitrate=bitrate,
+        framerate=int(vstream["r_frame_rate"].split("/")[0])
+    )
+    return analysis
+
+if __name__ == "__main__":
+    main()
