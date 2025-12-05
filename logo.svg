@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="120">
+  <style>
+    /* Default (light mode) */
+    text {
+      fill: #000000;
+    }
+
+    /* When the user prefers dark mode */
+    @media (prefers-color-scheme: dark) {
+      text {
+        fill: #ffffff;
+      }
+    }
+  </style>
+
+  <text x="50%" y="50%"
+        dominant-baseline="middle"
+        text-anchor="middle"
+        font-family="Fira Code, JetBrains Mono, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace"
+        font-size="36"
+        letter-spacing="6">
+    enkōdo
+  </text>
+</svg>
+

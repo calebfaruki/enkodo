@@ -1,13 +1,18 @@
-#!/usr/bin/env python
+#!/Users/calebfaruki/study/enkodo/.venv/bin/python3
 """
 Usage:
     enkodo analyze <filename>
+    enkodo band <filename>
+    enkodo deband <filename>
 """
 
+import os
 import subprocess
 import json
 from dataclasses import dataclass
 from docopt import docopt
+import vapoursynth as vs
+core = vs.core
 
 @dataclass
 class VideoAnalysis:
@@ -16,28 +21,30 @@ class VideoAnalysis:
     resolution: str
     duration: str
     bitrate: int # kbps
+    bit_depth: int # number of color levels
     framerate: int
 
 def main():
     arguments = docopt(__doc__)
 
     if arguments['analyze']:
-        analysis = analyze(arguments['<filename>'])
+        analysis = analyze(arguments)
         print(analysis)
+    elif arguments["band"]:
+        band(arguments)
+    elif arguments["deband"]:
+        deband(arguments)
 
-def analyze(filename: str) -> VideoAnalysis:
+def analyze(arguments) -> VideoAnalysis:
     print("Analyzing...")
 
-    command = [
-        "ffprobe",
-        "-print_format", "json",
-        "-show_format",
-        "-show_streams",
-        "-v", "quiet",
-        filename
-    ]
+    filename = arguments['<filename>']
 
-    result = subprocess.run(command, capture_output=True, text=True)
+    command = f"""
+        ffprobe -print_format json -show_format -show_streams -v quiet {filename}
+    """
+
+    result = subprocess.run(command, capture_output=True, shell=True)
     
     parsed_result = json.loads(result.stdout)
 
@@ -63,15 +70,78 @@ def analyze(filename: str) -> VideoAnalysis:
     # Get bitrate in kbps
     bitrate = int(vstream["bit_rate"])
 
+    # Get color levels (bit depth)
+    bit_depth = int(vstream["bits_per_raw_sample"])
+
     analysis = VideoAnalysis(
         container=container,
         codec=vstream["codec_name"],
         resolution=resolution,
         duration=duration,
         bitrate=bitrate,
+        bit_depth=bit_depth,
         framerate=int(vstream["r_frame_rate"].split("/")[0])
     )
     return analysis
+
+def band(arguments):
+    filename = arguments["<filename>"]
+    analysis = analyze(arguments)
+
+    clip = core.lsmas.LWLibavSource(filename, cachefile=f"/tmp/{os.path.basename(filename)}.lwi")
+
+    # Calculate divisor based on bit depth
+    target_levels = 32
+    current_levels = 2 ** analysis.bit_depth
+    divisor = current_levels // target_levels
+
+    clip = core.std.Lut(clip, function=lambda x: (x // divisor) * divisor)
+
+    pipe_to_ffmpeg(clip, "examples/banding/banded.mp4", crf=26)
+
+def deband(arguments):
+    filename = arguments['<filename>']
+    analysis = analyze(arguments)
+
+    original_bit_depth = analysis.bit_depth
+
+    clip = core.lsmas.LWLibavSource(filename, cachefile=f"/tmp/{os.path.basename(filename)}.lwi")
+
+    # Convert to 16 bit color depth for gradient calculation
+    if original_bit_depth < 16:
+        clip = core.fmtc.bitdepth(clip, bits=16)
+
+    # Use f3kdb to detect banding and smooth it out
+    clip = core.neo_f3kdb.Deband(
+        clip,
+        range=31, # pixel radius for gradient detection
+        y=255, # Luma strength, (moderate, not extreme)
+        cb=255, # Chroma blue strength
+        cr=255, # Chroma red strength
+        grainy=255, # Luma grain to mask smoothing
+        grainc=255, # Chroma gain
+        output_depth=16
+    )
+
+    # Sanity check
+    # clip = core.std.Invert(clip)
+
+    # If original bit depth < 16 bit depth, convert back with dithering
+    # to add appearance of smooth gradients despite fewere color levels.
+    if original_bit_depth < 16:
+        clip = core.fmtc.bitdepth(clip, bits=original_bit_depth, dmode=6)
+
+    pipe_to_ffmpeg(clip, "examples/banding/debanded.mp4", crf=26)
+
+def pipe_to_ffmpeg(clip, output_filename, crf=12):
+    clip.set_output()
+
+    command = f"""
+        ffmpeg -y -f yuv4mpegpipe -i - -c:v libx264 -crf {crf} -pix_fmt yuv420p {output_filename}
+    """
+    ffmpeg = subprocess.Popen(command, stdin=subprocess.PIPE, shell=True)
+    clip.output(ffmpeg.stdin, y4m=True)
+    ffmpeg.communicate()
 
 if __name__ == "__main__":
     main()
