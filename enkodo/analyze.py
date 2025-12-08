@@ -26,6 +26,8 @@ def analyze(arguments) -> VideoAnalysis:
     
     parsed_result = json.loads(result.stdout)
 
+    print(parsed_result)
+
     # Get container
     container = parsed_result["format"]["format_long_name"]
 

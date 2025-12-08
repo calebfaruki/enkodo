@@ -2,12 +2,7 @@
 """
 Usage:
     enkodo analyze <filename>
-    enkodo band <filename>
-    enkodo deband <filename>
-    enkodo interlace <filename>
-    enkodo deinterlace <filename>
-    enkodo block <filename>
-    enkodo deblock <filename>
+    enkodo prepare <filename>
 """
 
 import sys
@@ -19,9 +14,8 @@ import vapoursynth as vs
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from enkodo.analyze import analyze
-from enkodo.filters.deband import deband
-from enkodo.filters.deinterlace import deinterlace
-from enkodo.filters.deblock import deblock
+from enkodo.commands.prepare import prepare
+# from enkodo.filters import deband, deinterlace, deblock
 import enkodo.utils as utils
 
 core = vs.core
@@ -29,21 +23,10 @@ core = vs.core
 def main():
     arguments = docopt(__doc__)
 
-    if arguments['analyze']:
-        analysis = analyze(arguments)
-        print(analysis)
-    elif arguments["band"]:
-        band(arguments)
-    elif arguments["deband"]:
-        deband(arguments)
-    elif arguments["interlace"]:
-        interlace(arguments)
-    elif arguments["deinterlace"]:
-        deinterlace(arguments)
-    elif arguments["block"]:
-        block(arguments)
-    elif arguments["deblock"]:
-        deblock(arguments)
+    if arguments["analyze"]:
+        analyze(arguments)
+    if arguments["prepare"]:
+        prepare(arguments)
 
 def band(arguments):
     filename = arguments["<filename>"]
