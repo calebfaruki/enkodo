@@ -10,7 +10,8 @@ class VideoAnalysis:
     duration: str
     bitrate: int # kbps
     bit_depth: int # number of color levels
-    framerate: int
+    field_order: str # assume progressive
+    framerate: str
 
 
 def analyze(arguments) -> VideoAnalysis:
@@ -25,8 +26,6 @@ def analyze(arguments) -> VideoAnalysis:
     result = subprocess.run(command, capture_output=True, shell=True)
     
     parsed_result = json.loads(result.stdout)
-
-    print(parsed_result)
 
     # Get container
     container = parsed_result["format"]["format_long_name"]
@@ -60,6 +59,7 @@ def analyze(arguments) -> VideoAnalysis:
         duration=duration,
         bitrate=bitrate,
         bit_depth=bit_depth,
-        framerate=int(vstream["r_frame_rate"].split("/")[0])
+        field_order=vstream.get("field_order", "progressive"),
+        framerate=vstream["r_frame_rate"])
     )
     return analysis

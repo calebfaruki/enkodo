@@ -3,6 +3,7 @@
 Usage:
     enkodo analyze <filename>
     enkodo prepare <filename>
+    enkodo interlace <filename>
 """
 
 import sys
@@ -24,9 +25,12 @@ def main():
     arguments = docopt(__doc__)
 
     if arguments["analyze"]:
-        analyze(arguments)
-    if arguments["prepare"]:
+        analysis = analyze(arguments)
+        print(analysis)
+    elif arguments["prepare"]:
         prepare(arguments)
+    elif arguments["interlace"]:
+        interlace(arguments)
 
 def band(arguments):
     filename = arguments["<filename>"]
@@ -46,9 +50,9 @@ def band(arguments):
 def interlace(arguments):
     print("Interlacing...")
     filename = arguments["<filename>"]
-    
+
     command = f"""
-        ffmpeg -y -i {filename} -vf "tinterlace=mode=interleave_top" -c:v libx264 -crf 12 examples/interlacing/interlaced.mp4
+        ffmpeg -y -i {filename} -vf "tinterlace=mode=interleave_top" -x264opts interlaced=1:tff=1 -c:v libx264 -crf 12 examples/interlacing/interlaced.mp4
     """
     subprocess.run(command, shell=True)
 
