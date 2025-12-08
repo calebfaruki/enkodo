@@ -10,23 +10,21 @@ Usage:
     enkodo deblock <filename>
 """
 
+import sys
 import os
 import subprocess
-import json
-from dataclasses import dataclass
 from docopt import docopt
 import vapoursynth as vs
-core = vs.core
 
-@dataclass
-class VideoAnalysis:
-    container: str
-    codec: str
-    resolution: str
-    duration: str
-    bitrate: int # kbps
-    bit_depth: int # number of color levels
-    framerate: int
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from enkodo.analyze import analyze
+from enkodo.filters.deband import deband
+from enkodo.filters.deinterlace import deinterlace
+from enkodo.filters.deblock import deblock
+import enkodo.utils as utils
+
+core = vs.core
 
 def main():
     arguments = docopt(__doc__)
@@ -47,60 +45,11 @@ def main():
     elif arguments["deblock"]:
         deblock(arguments)
 
-def analyze(arguments) -> VideoAnalysis:
-    print("Analyzing...")
-
-    filename = arguments['<filename>']
-
-    command = f"""
-        ffprobe -print_format json -show_format -show_streams -v quiet {filename}
-    """
-
-    result = subprocess.run(command, capture_output=True, shell=True)
-    
-    parsed_result = json.loads(result.stdout)
-
-    # Get container
-    container = parsed_result["format"]["format_long_name"]
-
-    streams = parsed_result["streams"]
-
-    # Find default video stream.
-    vstream = [stream for stream in streams if stream["codec_type"] == "video" and stream["disposition"]["default"] == 1][0]
-
-    # Get resolution
-    height = vstream["height"]
-    width = vstream["width"]
-    resolution = f"{height}x{width}"
-
-    # Get duration
-    total_seconds = int(float(vstream["duration"]))
-    hours, remainder = divmod(total_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-
-    # Get bitrate in kbps
-    bitrate = int(vstream["bit_rate"])
-
-    # Get color levels (bit depth)
-    bit_depth = int(vstream["bits_per_raw_sample"])
-
-    analysis = VideoAnalysis(
-        container=container,
-        codec=vstream["codec_name"],
-        resolution=resolution,
-        duration=duration,
-        bitrate=bitrate,
-        bit_depth=bit_depth,
-        framerate=int(vstream["r_frame_rate"].split("/")[0])
-    )
-    return analysis
-
 def band(arguments):
     filename = arguments["<filename>"]
     analysis = analyze(arguments)
 
-    clip = load_clip(filename)
+    clip = utils.load_clip(filename)
 
     # Calculate divisor based on bit depth
     target_levels = 32
@@ -109,41 +58,7 @@ def band(arguments):
 
     clip = core.std.Lut(clip, function=lambda x: (x // divisor) * divisor)
 
-    pipe_to_ffmpeg(clip, "examples/banding/banded.mp4", crf=26)
-
-def deband(arguments):
-    filename = arguments['<filename>']
-    analysis = analyze(arguments)
-
-    original_bit_depth = analysis.bit_depth
-
-    clip = load_clip(filename)
-
-    # Convert to 16 bit color depth for gradient calculation
-    if original_bit_depth < 16:
-        clip = core.fmtc.bitdepth(clip, bits=16)
-
-    # Use f3kdb to detect banding and smooth it out
-    clip = core.neo_f3kdb.Deband(
-        clip,
-        range=31, # pixel radius for gradient detection
-        y=255, # Luma strength, (moderate, not extreme)
-        cb=255, # Chroma blue strength
-        cr=255, # Chroma red strength
-        grainy=255, # Luma grain to mask smoothing
-        grainc=255, # Chroma gain
-        output_depth=16
-    )
-
-    # Sanity check
-    # clip = core.std.Invert(clip)
-
-    # If original bit depth < 16 bit depth, convert back with dithering
-    # to add appearance of smooth gradients despite fewere color levels.
-    if original_bit_depth < 16:
-        clip = core.fmtc.bitdepth(clip, bits=original_bit_depth, dmode=6)
-
-    pipe_to_ffmpeg(clip, "examples/banding/debanded.mp4", crf=26)
+    utils.pipe_to_ffmpeg(clip, "examples/banding/banded.mp4", crf=26)
 
 def interlace(arguments):
     print("Interlacing...")
@@ -153,16 +68,6 @@ def interlace(arguments):
         ffmpeg -y -i {filename} -vf "tinterlace=mode=interleave_top" -c:v libx264 -crf 12 examples/interlacing/interlaced.mp4
     """
     subprocess.run(command, shell=True)
-
-def deinterlace(arguments):
-    filename = arguments["<filename>"]
-
-    clip = load_clip(filename)
-
-    # Use OpenCL version - no weights file needed
-    clip = core.nnedi3cl.NNEDI3CL(clip, field=1)
-
-    pipe_to_ffmpeg(clip, "examples/interlacing/deinterlaced.mp4")
 
 def block(arguments):
     print("Blocking...")
@@ -174,30 +79,6 @@ def block(arguments):
     """
 
     subprocess.run(command, shell=True)
-
-def deblock(arguments):
-    print("Deblocking...")
-    filename = arguments["<filename>"]
-
-    clip = load_clip(filename)
-
-    # quant: 0-60, higher = stronger deblocking
-    clip = core.deblock.Deblock(clip, quant=60)
-
-    pipe_to_ffmpeg(clip, "examples/blocking/deblocked.mp4", crf=20)
-
-def pipe_to_ffmpeg(clip, output_filename, crf=12):
-    clip.set_output()
-
-    command = f"""
-        ffmpeg -y -f yuv4mpegpipe -i - -c:v libx264 -crf {crf} -pix_fmt yuv420p {output_filename}
-    """
-    ffmpeg = subprocess.Popen(command, stdin=subprocess.PIPE, shell=True)
-    clip.output(ffmpeg.stdin, y4m=True)
-    ffmpeg.communicate()
-
-def load_clip(filename):
-    return core.lsmas.LWLibavSource(filename, cachefile=f"/tmp/{os.path.basename(filename)}.lwi")
 
 if __name__ == "__main__":
     main()
