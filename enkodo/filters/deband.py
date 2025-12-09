@@ -2,15 +2,10 @@ import vapoursynth
 core = vapoursynth.core
 
 import enkodo.utils as utils
-from enkodo.analyze import analyze
+from enkodo.analyze import analyze, VideoAnalysis
 
-def deband(arguments):
-    filename = arguments['<filename>']
-    analysis = analyze(arguments)
-
+def deband(clip: vapoursynth.VideoNode, analysis: VideoAnalysis) -> vapoursynth.VideoNode:
     original_bit_depth = analysis.bit_depth
-
-    clip = utils.load_clip(filename)
 
     # Convert to 16 bit color depth for gradient calculation
     if original_bit_depth < 16:
@@ -36,4 +31,7 @@ def deband(arguments):
     if original_bit_depth < 16:
         clip = core.fmtc.bitdepth(clip, bits=original_bit_depth, dmode=6)
 
-    utils.pipe_to_ffmpeg(clip, "examples/banding/debanded.mp4", crf=26)
+    return clip
+
+def needs_debanding(analysis) -> bool:
+    return analysis.bit_depth < 10

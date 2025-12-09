@@ -60,6 +60,6 @@ def analyze(arguments) -> VideoAnalysis:
         bitrate=bitrate,
         bit_depth=bit_depth,
         field_order=vstream.get("field_order", "progressive"),
-        framerate=vstream["r_frame_rate"])
+        framerate=vstream["r_frame_rate"]
     )
     return analysis
