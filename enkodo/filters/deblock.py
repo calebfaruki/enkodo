@@ -1,14 +1,13 @@
 import vapoursynth
 core = vapoursynth.core
-import enkodo.utils as utils
 
-def deblock(arguments):
+def deblock(clip):
     print("Deblocking...")
-    filename = arguments["<filename>"]
-
-    clip = utils.load_clip(filename)
-
     # quant: 0-60, higher = stronger deblocking
     clip = core.deblock.Deblock(clip, quant=60)
 
-    utils.pipe_to_ffmpeg(clip, "examples/blocking/deblocked.mp4", crf=20)
+    return clip
+
+def needs_deblocking(analysis) -> bool:
+    # Very low bitrate = likely blocking artifacts
+    return analysis.bitrate < 1_000_000  # Under 1 Mbps

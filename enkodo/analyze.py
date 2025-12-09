@@ -14,13 +14,11 @@ class VideoAnalysis:
     framerate: str
 
 
-def analyze(arguments) -> VideoAnalysis:
+def analyze(file_path) -> VideoAnalysis:
     print("Analyzing...")
 
-    filename = arguments['<filename>']
-
     command = f"""
-        ffprobe -print_format json -show_format -show_streams -v quiet {filename}
+        ffprobe -print_format json -show_format -show_streams -v quiet {file_path}
     """
 
     result = subprocess.run(command, capture_output=True, shell=True)

@@ -3,12 +3,13 @@
 Usage:
     enkodo analyze <filename>
     enkodo prepare <filename>
-    enkodo interlace <filename>
+    enkodo damage <filename>
 """
 
 import sys
 import os
 import subprocess
+import tempfile
 from docopt import docopt
 import vapoursynth as vs
 
@@ -16,8 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from enkodo.analyze import analyze
 from enkodo.commands.prepare import prepare
-# from enkodo.filters import deband, deinterlace, deblock
-import enkodo.utils as utils
 
 core = vs.core
 
@@ -25,47 +24,64 @@ def main():
     arguments = docopt(__doc__)
 
     if arguments["analyze"]:
-        analysis = analyze(arguments)
+        analysis = analyze(arguments["<filename>"])
         print(analysis)
     elif arguments["prepare"]:
         prepare(arguments)
-    elif arguments["interlace"]:
-        interlace(arguments)
+    elif arguments["damage"]:
+        damage(arguments)
 
-def band(arguments):
-    filename = arguments["<filename>"]
-    analysis = analyze(arguments)
+def damage(arguments):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        temp1 = os.path.join(tmpdir, "interlaced.mp4")
+        temp2 = os.path.join(tmpdir, "banded.mp4")
+    
+        source = arguments["<filename>"]
 
-    clip = utils.load_clip(filename)
+        interlace(source, temp1)  # source -> temp1
+        band(temp1, temp2, arguments) # temp1 -> temp2
+        block(temp2, "damaged.mp4", arguments) # temp2 -> final
 
-    # Calculate divisor based on bit depth
-    target_levels = 32
-    current_levels = 2 ** analysis.bit_depth
-    divisor = current_levels // target_levels
-
-    clip = core.std.Lut(clip, function=lambda x: (x // divisor) * divisor)
-
-    utils.pipe_to_ffmpeg(clip, "examples/banding/banded.mp4", crf=26)
-
-def interlace(arguments):
+def interlace(input_path, output_path):
     print("Interlacing...")
-    filename = arguments["<filename>"]
 
     command = f"""
-        ffmpeg -y -i {filename} -vf "tinterlace=mode=interleave_top" -x264opts interlaced=1:tff=1 -c:v libx264 -crf 12 examples/interlacing/interlaced.mp4
+        ffmpeg -y -i {input_path} -vf "tinterlace=mode=interleave_top" -x264opts interlaced=1:tff=1 -c:v libx264 -crf 12 {output_path}
     """
     subprocess.run(command, shell=True)
 
-def block(arguments):
+def band(input_path, output_path, arguments):
+    print("Banding...")
+
+    analysis = analyze({"<filename>": input_path})
+    interlace_flag = get_interlace_flag(analysis.field_order)
+
+    command = f"""
+        ffmpeg -y -i {input_path} -vf "lutyuv=y='bitand(val,248)'" {interlace_flag} -c:v libx264 -crf 26 {output_path}
+    """
+
+    subprocess.run(command, shell=True)
+
+def block(input_path, output_path, arguments):
     print("Blocking...")
-    filename = arguments["<filename>"]
+
+    analysis = analyze({"<filename>": input_path})
+    interlace_flag = get_interlace_flag(analysis.field_order)
 
     # Throttle bitrate and disable built-in h.264 deblocking
     command = f"""
-        ffmpeg -y -i {filename} -c:v libx264 -b:v 800k -x264-params no-deblock=1 -preset ultrafast examples/blocking/blocked.mp4
+        ffmpeg -y -i {input_path} -c:v libx264 -b:v 800k -x264-params no-deblock=1 {interlace_flag} -preset ultrafast {output_path}
     """
 
     subprocess.run(command, shell=True)
+
+def get_interlace_flag(field_order):
+    interlace_flag = ""
+    if field_order == "tt":
+        interlace_flag = "-x264opts interlaced=1:tff=1"
+    elif field_order == "bb":
+        interlace_flag = "-x264opts interlaced=1:bff=1"
+    return interlace_flag
 
 if __name__ == "__main__":
     main()

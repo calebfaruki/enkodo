@@ -1,17 +1,16 @@
 import vapoursynth
 core = vapoursynth.core
 
-import enkodo.utils as utils
-from enkodo.analyze import analyze, VideoAnalysis
+from enkodo.analyze import VideoAnalysis
 
 def deband(clip: vapoursynth.VideoNode, analysis: VideoAnalysis) -> vapoursynth.VideoNode:
     original_bit_depth = analysis.bit_depth
 
-    # Convert to 16 bit color depth for gradient calculation
-    if original_bit_depth < 16:
+    # neo_f3kdb only accepts 8-bit and 16-bit source
+    if original_bit_depth not in (8, 16):
         clip = core.fmtc.bitdepth(clip, bits=16)
 
-    # Use f3kdb to detect banding and smooth it out
+    # Use f3kdb to detect banding and smooth it out using bit output.
     clip = core.neo_f3kdb.Deband(
         clip,
         range=31, # pixel radius for gradient detection
@@ -26,10 +25,8 @@ def deband(clip: vapoursynth.VideoNode, analysis: VideoAnalysis) -> vapoursynth.
     # Sanity check
     # clip = core.std.Invert(clip)
 
-    # If original bit depth < 16 bit depth, convert back with dithering
-    # to add appearance of smooth gradients despite fewere color levels.
-    if original_bit_depth < 16:
-        clip = core.fmtc.bitdepth(clip, bits=original_bit_depth, dmode=6)
+    # 16-bit -> 10-bit. Higher bit depth input gives more headroom for dithering.
+    clip = core.fmtc.bitdepth(clip, bits=10, dmode=6)
 
     return clip
 
